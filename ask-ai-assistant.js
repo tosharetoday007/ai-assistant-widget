@@ -361,21 +361,50 @@
     });
   }
 
-  function handleDealQuery(cityName) {
+  // Tries to pull an explicit "X to Y" / "from X to Y" route out of a
+  // free-text query (e.g. "flight from Madrid to Santander"). Falls back
+  // to null if no clear two-city pattern is found, in which case callers
+  // should fall back to guessCityFromText() for a single-city match.
+  function guessRouteFromText(text) {
+    var m = text.match(/(?:from\s+)?([a-zA-Zà-ÿÀ-ÿ]+(?:\s[a-zA-Zà-ÿÀ-ÿ]+)?)\s+to\s+([a-zA-Zà-ÿÀ-ÿ]+(?:\s[a-zA-Zà-ÿÀ-ÿ]+)?)/i);
+    if (!m) { return null; }
+    var origin = m[1].trim();
+    var destination = m[2].trim().replace(/[?.,!]+$/, '');
+    if (!origin || !destination) { return null; }
+    return { origin: origin, destination: destination };
+  }
+
+  function handleDealQuery(cityName, route) {
     var typingId = showTyping();
     jsonp(GAS_URL + '?action=getDeals').then(function (allDeals) {
       removeTyping(typingId);
       var deals = (allDeals || []).filter(function (d) { return d.from && d.price; });
-      var hadCityMatches = true;
-      if (cityName) {
+      var isSpecificSearch = false;
+      var noMatchLabel = '';
+
+      if (route) {
+        // Specific route requested: BOTH origin and destination must match,
+        // otherwise showing "today's deals" would be misleading.
+        isSpecificSearch = true;
+        noMatchLabel = route.origin + ' to ' + route.destination;
+        var ro = route.origin.toLowerCase();
+        var rd = route.destination.toLowerCase();
+        deals = deals.filter(function (d) {
+          var from = (d.from || '').toLowerCase();
+          var to = (d.to || '').toLowerCase();
+          return from.indexOf(ro) > -1 && to.indexOf(rd) > -1;
+        });
+      } else if (cityName) {
+        isSpecificSearch = true;
+        noMatchLabel = cityName;
         var cn = cityName.toLowerCase();
-        var matches = deals.filter(function (d) { return (d.to || '').toLowerCase().indexOf(cn) > -1 || (d.from || '').toLowerCase().indexOf(cn) > -1; });
-        hadCityMatches = matches.length > 0;
-        if (matches.length) { deals = matches; }
+        deals = deals.filter(function (d) { return (d.to || '').toLowerCase().indexOf(cn) > -1 || (d.from || '').toLowerCase().indexOf(cn) > -1; });
       }
+
       if (!deals.length) {
-        if (cityName && !hadCityMatches) {
-          addMsg('ai', 'No live flight prices came back for ' + escapeHtml(cityName) + ' right now — try different dates or check <a href="https://www.latestfoto.com/p/airticket.html" target="_blank" rel="noopener">our flight page</a>.');
+        if (isSpecificSearch) {
+          addMsg('ai', 'No live flight prices came back for ' + escapeHtml(noMatchLabel) +
+            ' right now — try different dates or search it directly on <a href="https://www.latestfoto.com/p/airticket.html" target="_blank" rel="noopener">our flight page</a>.');
         } else {
           addMsg('ai', "No flight deals are available right now — the feed refreshes daily.");
         }
@@ -696,8 +725,9 @@
       return;
     }
     if (liveIntent === 'flight' || liveIntent === 'deal') {
-      var cityForDeal = guessCityFromText(text, ctx);
-      handleDealQuery(cityForDeal);
+      var route = guessRouteFromText(text);
+      var cityForDeal = route ? null : guessCityFromText(text, ctx);
+      handleDealQuery(cityForDeal, route);
       btn.disabled = false;
       input.focus();
       return;
