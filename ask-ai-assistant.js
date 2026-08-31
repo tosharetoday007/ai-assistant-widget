@@ -110,9 +110,15 @@
         if (data && data.content && data.content[0]) {
           callback(null, data.content[0].text);
         } else {
+          // eslint-disable-next-line no-console
+          console.error('[Ask AI Assistant] Unexpected proxy response shape:', data);
           callback('No response', null);
         }
-      }).catch(function (err) { callback(err, null); });
+      }).catch(function (err) {
+        // eslint-disable-next-line no-console
+        console.error('[Ask AI Assistant] Proxy call failed:', err);
+        callback(err, null);
+      });
   }
 
   // JSONP helper for Apps-Script endpoints that only support GET + callback.
@@ -153,16 +159,21 @@
      to cut proxy round-trips in half on page load.
   ============================================================ */
   function classifyAndSuggest(ctx, callback) {
+    var hasLabels = ctx.labels && ctx.labels.length > 0;
     var systemPrompt =
       'You classify an article for a combined travel + immigration website and generate 6 short suggested reader questions. ' +
       'Return ONLY strict JSON, no markdown, no explanation, matching exactly this shape: ' +
       '{"category":"travel|immigration|general","topic":"short topic name, e.g. a city or a visa name","questions":["q1","q2","q3","q4","q5","q6"]}. ' +
       '"category" is "travel" if the article is primarily about a destination, trip, hotel, or activity. ' +
       '"category" is "immigration" if it is primarily about visas, residency, work permits, citizenship, or moving abroad. ' +
-      'Otherwise use "general". Each question must be under 12 words and directly about the article topic.';
+      'Otherwise use "general". ' +
+      (hasLabels
+        ? 'Base the 6 questions primarily on the article\'s LABELS (its topics/tags) rather than the exact title — the labels tell you what the reader actually cares about (e.g. a specific city, visa type, or theme). Use the title and excerpt only for extra context, not as the main subject of the questions. '
+        : 'This article has no labels, so base the questions on its title and excerpt. ') +
+      'Each question must be under 12 words and directly relevant to those topics.';
 
-    var userMsg = 'Article title: ' + ctx.title + '\n' +
-      'Labels: ' + ctx.labels.join(', ') + '\n' +
+    var userMsg = 'Labels (primary topic signal, use these to write the questions): ' + (hasLabels ? ctx.labels.join(', ') : '(none)') + '\n' +
+      'Article title (context only): ' + ctx.title + '\n' +
       'Excerpt: ' + ctx.body.substring(0, 400);
 
     callProxy(systemPrompt, userMsg, function (err, response) {
