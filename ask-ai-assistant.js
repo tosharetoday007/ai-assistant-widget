@@ -366,12 +366,21 @@
     jsonp(GAS_URL + '?action=getDeals').then(function (allDeals) {
       removeTyping(typingId);
       var deals = (allDeals || []).filter(function (d) { return d.from && d.price; });
+      var hadCityMatches = true;
       if (cityName) {
         var cn = cityName.toLowerCase();
         var matches = deals.filter(function (d) { return (d.to || '').toLowerCase().indexOf(cn) > -1 || (d.from || '').toLowerCase().indexOf(cn) > -1; });
+        hadCityMatches = matches.length > 0;
         if (matches.length) { deals = matches; }
       }
-      if (!deals.length) { addMsg('ai', "No flight deals are available right now — the feed refreshes daily."); return; }
+      if (!deals.length) {
+        if (cityName && !hadCityMatches) {
+          addMsg('ai', 'No live flight prices came back for ' + escapeHtml(cityName) + ' right now — try different dates or check <a href="https://www.latestfoto.com/p/airticket.html" target="_blank" rel="noopener">our flight page</a>.');
+        } else {
+          addMsg('ai', "No flight deals are available right now — the feed refreshes daily.");
+        }
+        return;
+      }
       deals = deals.slice(0, 4);
       var cards = deals.map(function (d) {
         return '<a class="io-result-card" href="' + d.link + '" target="_blank" rel="noopener">' +
